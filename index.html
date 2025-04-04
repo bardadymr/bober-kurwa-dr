@@ -53,20 +53,23 @@
         <div id="status"></div>
     </div>
     
-    <!-- Сначала загружаем Buffer -->
-    <script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/index.min.js"></script>
+    <!-- Загружаем более надежную версию buffer через CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/index.js"></script>
     
-    <!-- Делаем Buffer глобальным для совместимости -->
-    <script>
-        window.Buffer = buffer.Buffer;
-    </script>
-    
-    <!-- Затем загружаем Solana Web3 -->
+    <!-- Загружаем Solana Web3 -->
     <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
     
     <script>
         window.addEventListener('load', () => {
             console.log('Page loaded!');
+            
+            // Проверяем наличие Buffer и его методов
+            if (typeof buffer !== 'undefined' && buffer.Buffer) {
+                console.log('Buffer library loaded successfully');
+                // Теперь функция from должна быть доступна как buffer.Buffer.from
+            } else {
+                console.error('Buffer library not loaded correctly');
+            }
             
             const statusEl = document.getElementById('status');
             
@@ -80,6 +83,17 @@
                     statusEl.className = 'success';
                 }
                 console.log(message);
+            }
+            
+            // Функция для кодирования в base64 без использования Buffer
+            function arrayBufferToBase64(buffer) {
+                let binary = '';
+                const bytes = new Uint8Array(buffer);
+                const len = bytes.byteLength;
+                for (let i = 0; i < len; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return window.btoa(binary);
             }
             
             document.getElementById('connect-wallet').addEventListener('click', async () => {
@@ -129,8 +143,8 @@
                     // Сериализуем транзакцию
                     const serializedTransaction = signedTransaction.serialize();
                     
-                    // Используем глобальный Buffer
-                    const base64Transaction = Buffer.from(serializedTransaction).toString('base64');
+                    // Используем пользовательскую функцию вместо Buffer.from
+                    const base64Transaction = arrayBufferToBase64(serializedTransaction);
                     
                     showStatus('Отправка транзакции на сервер...');
                     
